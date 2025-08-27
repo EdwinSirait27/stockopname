@@ -24,9 +24,7 @@ use App\Http\Controllers\DbController;
 | contains the "web" middleware group. Now create something great!
 |
 */
-
 // Route::redirect('/', '/dashboard-general-dashboard');
-
 Route::middleware('guest')->group(function () {
     Route::get('/', function (LoginController $controller) {
         return Auth::check() ? redirect('/dashboard') : $controller->index();
@@ -170,15 +168,3 @@ Route::get('/redirect-by-role', function () {
 
     return redirect('/dashboard'); // fallback
 })->middleware('auth');
-
-
-        //   @foreach($posopnameitems_by_location as $item)
-        //             <tr>
-        //                 <td>{{ $item->opname_item_id }}</td>
-        //                 <td>{{ $item->item->name ?? 'N/A' }}</td>
-        //                 <td>{{ $item->item->barcode ?? 'N/A' }}</td>
-        //                 <td>{{ $item->qty_system }}</td>
-        //                 <td>{{ $item->qty_real }}</td>
-        //                 <td>{{ $item->note ?? '-' }}</td>
-        //             </tr>
-        //         @endforeach
