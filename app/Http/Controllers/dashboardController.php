@@ -1,6 +1,7 @@
 <?php
 
 namespace App\Http\Controllers;
+
 use App\Imports\SoImport;
 use App\Models\Posopname;
 use App\Models\Location;
@@ -13,9 +14,137 @@ use App\Models\Mtokosoglo;
 use App\Models\Posopnamesublocation;
 use Illuminate\Support\Facades\Log;
 use Barryvdh\DomPDF\Facade\Pdf;
- use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Http;
+
 class dashboardController extends Controller
 {
+    // public function listPrintLocations()
+    // {
+    //     $locations = Posopname::with('location')
+    //         ->get()
+    //         ->map(function ($job) {
+    //             return [
+    //                 'location' => $job->location->name,
+    //                 'note'     => $job->note,
+    //             ];
+    //         })
+    //         ->values();
+    //     return response()->json([
+    //         'status' => 'OK',
+    //         'data' => $locations
+    //     ]);
+    // }
+    public function listPrintLocations()
+{
+    $locations = Posopname::with('location')
+        ->get()
+        ->map(function ($job) {
+            return [
+                'location' => $job->location->name,
+                'note'     => $job->note,
+            ];
+        })
+        ->values();
+
+    return response()->json([
+        'status' => 'OK',
+        'data' => $locations
+    ]);
+}
+
+     public function checkPrint(Request $request)
+    {
+        // Ambil nama lokasi dari query string
+        $locationName = $request->location;
+
+        if (!$locationName) {
+            return response()->json([
+                'status' => 'ERROR',
+                'message' => 'location wajib diisi (?location=NamaLokasi)'
+            ], 400);
+        }
+
+        // Cari job berdasarkan lokasi + status
+        $job = Posopnamesublocation::with(
+            'opname',
+            'sublocation.location',
+            'users',
+            'sublocation',
+            'opname.ambildarisublocation'
+        )
+            ->where('status', 'REQ PRINT')
+            ->whereHas('sublocation.location', function ($q) use ($locationName) {
+                $q->where('name', $locationName);
+            })
+            ->first();
+
+        if (!$job) {
+            return response()->json([
+                'status' => 'NO JOB',
+                'message' => 'Tidak ada job untuk lokasi: ' . $locationName
+            ]);
+        }
+
+        // Ambil data opname
+        $posopname = Posopname::with('ambildarisublocation', 'location')
+            ->where('opname_id', $job->opname_id)
+            ->first();
+
+        // Ambil items
+        $posopnameitems = Posopnameitem::select([
+            'opname_item_id',
+            'opname_id',
+            'item_master_id',
+            'qty_system',
+            'qty_real',
+            'note',
+            'type',
+            'company_id',
+            'sub_location_id',
+            'opname_sub_location_id'
+        ])
+            ->with(
+                'sublocation',
+                'opname',
+                'posopnamesublocation',
+                'opname.location',
+                'item',
+                'item.posunit'
+            )
+            ->where('opname_sub_location_id', $job->opname_sub_location_id)
+            ->get();
+
+        // Hitung total real
+        $totalQtyReal = $posopnameitems->reduce(function ($carry, $item) {
+            return bcadd($carry, $item->qty_real, 3);
+        }, '0');
+
+
+        // Count item by code
+        $codeCounts = $posopnameitems
+            ->groupBy(fn($item) => $item->item->code ?? '-')
+            ->map(fn($g) => $g->count());
+
+        // Render HTML
+        $html = view('pages.printitem', [
+            'posopnamesublocation' => collect([$job]),
+            'form_number' => $job->form_number,
+            'posopname' => $posopname,
+            'posopnameitems' => $posopnameitems,
+            'totalQtyReal' => $totalQtyReal,
+            'codeCounts' => $codeCounts
+        ])->render();
+
+        // Update status
+        $job->update(['status' => 'PRINTED']);
+
+        return response()->json([
+            'status' => 'OK',
+            'form_number' => $job->form_number,
+            'html' => $html
+        ]);
+    }
+
     public function index()
     {
         $locations = Location::all();
@@ -77,7 +206,7 @@ class dashboardController extends Controller
             ->rawColumns(['action'])
             ->make(true);
     }
-   
+
     public function approveAll($opname_id)
     {
         $updated = Posopnamesublocation::where('opname_id', $opname_id)
@@ -88,7 +217,7 @@ class dashboardController extends Controller
         }
         return redirect()->back()->with('error', 'Tidak ada data dengan status PRINTED yang bisa di-approve.');
     }
-   
+
     public function showitem($opname_sub_location_id)
     {
         Log::info('Masuk ke method showitem', ['opname_sub_location_id' => $opname_sub_location_id]);
@@ -145,7 +274,7 @@ class dashboardController extends Controller
         }
         return DataTables::of($query)->make(true);
     }
-     public function show($opname_id)
+    public function show($opname_id)
     {
         Log::info('Masuk ke method show', ['opname_id' => $opname_id]);
         $posopnamesublocation = Posopnamesublocation::with('opname', 'sublocation.location', 'users', 'sublocation', 'opname.ambildarisublocation')
@@ -156,7 +285,7 @@ class dashboardController extends Controller
             ->get();
         return view('pages.showdashboard', compact('posopnamesublocation', 'opname_id', 'posopname'));
     }
- public function getPosopnamesublocations(Request $request)
+    public function getPosopnamesublocations(Request $request)
     {
         $query = Posopnamesublocation::select('pos_opname_sub_location.*')
             ->with('sublocation', 'opname.location', 'users', 'oxy');
@@ -207,13 +336,11 @@ class dashboardController extends Controller
             })
             ->rawColumns(['action'])
             ->make(true);
-
     }
-    
+
     public function printitem(Request $request, $opname_sub_location_id)
     {
         Log::info('Masuk ke method printitem', ['opname_sub_location_id' => $opname_sub_location_id]);
-
         $posopnamesublocation = Posopnamesublocation::with(
             'opname',
             'sublocation.location',
@@ -275,70 +402,100 @@ class dashboardController extends Controller
         ]);
     }
 
-public function checkPrint()
-{
-    $job = Posopnamesublocation::with(
-        'opname',
-        'sublocation.location',
-        'users',
-        'sublocation',
-        'opname.ambildarisublocation'
-    )
-        ->where('status', 'REQ PRINT')
-        ->first();
-    if ($job) {
-        $posopname = Posopname::with('ambildarisublocation', 'location')
-            ->where('opname_id', $job->opname_id)
-            ->first();
-        $posopnameitems = Posopnameitem::select([
-            'opname_item_id',
-            'opname_id',
-            'item_master_id',
-            'qty_system',
-            'qty_real',
-            'note',
-            'type',
-            'company_id',
-            'sub_location_id',
-            'opname_sub_location_id'
-        ])
-            ->with(
-                'sublocation',
-                'opname',
-                'posopnamesublocation',
-                'opname.location',
-                'item',
-                'item.posunit'
-            )
-            ->where('opname_sub_location_id', $job->opname_sub_location_id)
-            ->get();
-        $totalQtyReal = $posopnameitems->reduce(function ($carry, $item) {
-            return bcadd($carry, $item->qty_real, 3);
-        }, '0');
-        $codeCounts = $posopnameitems
-            ->groupBy(function ($item) {
-                return $item->item->code ?? '-';
-            })
-            ->map(function ($group) {
-                return $group->count();
-            });
-        $html = view('pages.printitem', [
-            'posopnamesublocation' => collect([$job]),
-            'form_number' => $job->form_number,
-            'posopname' => $posopname,
-            'posopnameitems' => $posopnameitems,
-            'totalQtyReal' => $totalQtyReal,
-            'codeCounts' => $codeCounts
-        ])->render();
-$job->update(['status' => 'PRINTED']);
-        return response()->json([
-            'status' => 'OK',
-            'form_number' => $job->form_number,
-            'html' => $html
-        ]);
-    }
-    return response()->json(['status' => 'NO JOB']);
-}
+   
+    // public function checkPrint(Request $request)
+    // {
+    //     // Ambil nama lokasi dari query string
+    //     $locationName = $request->location;
+
+    //     if (!$locationName) {
+    //         return response()->json([
+    //             'status' => 'ERROR',
+    //             'message' => 'location wajib diisi (?location=NamaLokasi)'
+    //         ], 400);
+    //     }
+
+    //     // Cari job berdasarkan lokasi + status
+    //     $job = Posopnamesublocation::with(
+    //         'opname',
+    //         'sublocation.location',
+    //         'users',
+    //         'sublocation',
+    //         'opname.ambildarisublocation'
+    //     )
+    //         ->where('status', 'REQ PRINT')
+    //         ->whereHas('sublocation.location', function ($q) use ($locationName) {
+    //             $q->where('name', $locationName);
+    //         })
+    //         ->first();
+
+    //     if (!$job) {
+    //         return response()->json([
+    //             'status' => 'NO JOB',
+    //             'message' => 'Tidak ada job untuk lokasi: ' . $locationName
+    //         ]);
+    //     }
+
+    //     // Ambil data opname
+    //     $posopname = Posopname::with('ambildarisublocation', 'location')
+    //         ->where('opname_id', $job->opname_id)
+    //         ->first();
+
+    //     // Ambil items
+    //     $posopnameitems = Posopnameitem::select([
+    //         'opname_item_id',
+    //         'opname_id',
+    //         'item_master_id',
+    //         'qty_system',
+    //         'qty_real',
+    //         'note',
+    //         'type',
+    //         'company_id',
+    //         'sub_location_id',
+    //         'opname_sub_location_id'
+    //     ])
+    //         ->with(
+    //             'sublocation',
+    //             'opname',
+    //             'posopnamesublocation',
+    //             'opname.location',
+    //             'item',
+    //             'item.posunit'
+    //         )
+    //         ->where('opname_sub_location_id', $job->opname_sub_location_id)
+    //         ->get();
+
+    //     // Hitung total real
+    //     $totalQtyReal = $posopnameitems->reduce(function ($carry, $item) {
+    //         return bcadd($carry, $item->qty_real, 3);
+    //     }, '0');
+
+
+    //     // Count item by code
+    //     $codeCounts = $posopnameitems
+    //         ->groupBy(fn($item) => $item->item->code ?? '-')
+    //         ->map(fn($g) => $g->count());
+
+    //     // Render HTML
+    //     $html = view('pages.printitem', [
+    //         'posopnamesublocation' => collect([$job]),
+    //         'form_number' => $job->form_number,
+    //         'posopname' => $posopname,
+    //         'posopnameitems' => $posopnameitems,
+    //         'totalQtyReal' => $totalQtyReal,
+    //         'codeCounts' => $codeCounts
+    //     ])->render();
+
+    //     // Update status
+    //     $job->update(['status' => 'PRINTED']);
+
+    //     return response()->json([
+    //         'status' => 'OK',
+    //         'form_number' => $job->form_number,
+    //         'html' => $html
+    //     ]);
+    // }
+
     public function indexso($opname_id)
     {
         $files = Storage::disk('public')->files('templateso');
@@ -415,3 +572,165 @@ $job->update(['status' => 'PRINTED']);
         abort(404);
     }
 }
+ // public function checkPrint()
+    // {
+
+    //     $job = Posopnamesublocation::with(
+    //         'opname',
+    //         'sublocation.location',
+    //         'users',
+    //         'sublocation',
+    //         'opname.ambildarisublocation'
+    //     )
+    //         ->where('status', 'REQ PRINT')
+    //         ->first();
+    //     if ($job) {
+    //         $posopname = Posopname::with('ambildarisublocation', 'location')
+    //             ->where('opname_id', $job->opname_id)
+    //             ->first();
+    //         $posopnameitems = Posopnameitem::select([
+    //             'opname_item_id',
+    //             'opname_id',
+    //             'item_master_id',
+    //             'qty_system',
+    //             'qty_real',
+    //             'note',
+    //             'type',
+    //             'company_id',
+    //             'sub_location_id',
+    //             'opname_sub_location_id'
+    //         ])
+    //             ->with(
+    //                 'sublocation',
+    //                 'opname',
+    //                 'posopnamesublocation',
+    //                 'opname.location',
+    //                 'item',
+    //                 'item.posunit'
+    //             )
+    //             ->where('opname_sub_location_id', $job->opname_sub_location_id)
+    //             ->get();
+    //         $totalQtyReal = $posopnameitems->reduce(function ($carry, $item) {
+    //             return bcadd($carry, $item->qty_real, 3);
+    //         }, '0');
+    //         $codeCounts = $posopnameitems
+    //             ->groupBy(function ($item) {
+    //                 return $item->item->code ?? '-';
+    //             })
+    //             ->map(function ($group) {
+    //                 return $group->count();
+    //             });
+    //         $html = view('pages.printitem', [
+    //             'posopnamesublocation' => collect([$job]),
+    //             'form_number' => $job->form_number,
+    //             'posopname' => $posopname,
+    //             'posopnameitems' => $posopnameitems,
+    //             'totalQtyReal' => $totalQtyReal,
+    //             'codeCounts' => $codeCounts
+    //         ])->render();
+    // $job->update(['status' => 'PRINTED']);
+    //         return response()->json([
+    //             'status' => 'OK',
+    //             'form_number' => $job->form_number,
+    //             'html' => $html
+    //         ]);
+    //     }
+    //     return response()->json(['status' => 'NO JOB']);
+    // }
+    // public function checkPrint(Request $request)
+    // {
+    //     // 1. Ambil lokasi dari query param
+    //     $locationId = $request->location_id;
+
+    //     if (!$locationId) {
+    //         return response()->json([
+    //             'status' => 'ERROR',
+    //             'message' => 'location_id wajib diisi'
+    //         ], 400);
+    //     }
+
+    //     // 2. Cari job berdasarkan lokasi
+    //     $job = Posopnamesublocation::with(
+    //         'opname',
+    //         'sublocation.location',
+    //         'users',
+    //         'sublocation',
+    //         'opname.ambildarisublocation'
+    //     )
+    //         ->where('status', 'REQ PRINT')
+    //         ->whereHas('sublocation.location', function ($q) use ($locationId) {
+    //             $q->where('name', $locationId);
+    //         })
+    //         ->first();
+
+    //     // 3. Jika tidak ada job
+    //     if (!$job) {
+    //         return response()->json([
+    //             'status' => 'NO JOB',
+    //             'message' => 'Tidak ada job untuk location_id ' . $locationId
+    //         ]);
+    //     }
+
+    //     // 4. Ambil data posopname
+    //     $posopname = Posopname::with('ambildarisublocation', 'location')
+    //         ->where('opname_id', $job->opname_id)
+    //         ->first();
+
+    //     // 5. Ambil item di sublocation tersebut
+    //     $posopnameitems = Posopnameitem::select([
+    //         'opname_item_id',
+    //         'opname_id',
+    //         'item_master_id',
+    //         'qty_system',
+    //         'qty_real',
+    //         'note',
+    //         'type',
+    //         'company_id',
+    //         'sub_location_id',
+    //         'opname_sub_location_id'
+    //     ])
+    //         ->with(
+    //             'sublocation',
+    //             'opname',
+    //             'posopnamesublocation',
+    //             'opname.location',
+    //             'item',
+    //             'item.posunit'
+    //         )
+    //         ->where('opname_sub_location_id', $job->opname_sub_location_id)
+    //         ->get();
+
+    //     // 6. Hitung total
+    //     $totalQtyReal = $posopnameitems->reduce(function ($carry, $item) {
+    //         return bcadd($carry, $item->qty_real, 3);
+    //     }, '0');
+
+    //     // 7. Hitung count item berdasarkan kode
+    //     $codeCounts = $posopnameitems
+    //         ->groupBy(function ($item) {
+    //             return $item->item->code ?? '-';
+    //         })
+    //         ->map(function ($group) {
+    //             return $group->count();
+    //         });
+
+    //     // 8. Render HTML
+    //     $html = view('pages.printitem', [
+    //         'posopnamesublocation' => collect([$job]),
+    //         'form_number' => $job->form_number,
+    //         'posopname' => $posopname,
+    //         'posopnameitems' => $posopnameitems,
+    //         'totalQtyReal' => $totalQtyReal,
+    //         'codeCounts' => $codeCounts
+    //     ])->render();
+
+    //     // 9. Update status setelah diprint
+    //     $job->update(['status' => 'PRINTED']);
+
+    //     // 10. Response JSON
+    //     return response()->json([
+    //         'status' => 'OK',
+    //         'form_number' => $job->form_number,
+    //         'html' => $html
+    //     ]);
+    // }

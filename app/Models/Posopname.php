@@ -11,7 +11,7 @@ class Posopname extends Model
     protected $connection = 'mysql_second'; // koneksi ke database kedua
     protected $table = 'pos_opname';   
     protected $primaryKey = 'opname_id';
-    public $incrementing = false; // kalau ID bukan auto increment integer
+    public $incrementing = false;
 protected $keyType = 'string';
      protected $fillable = [
         'opname_id',
@@ -38,7 +38,6 @@ protected $keyType = 'string';
     'opname_id' => 'string',
     'location_id' => 'string',
 ];
-
      public function location()
 {
     return $this->belongsTo(Location::class, 'location_id', 'location_id');

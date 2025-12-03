@@ -30,7 +30,6 @@ Route::middleware('guest')->group(function () {
         return Auth::check() ? redirect('/dashboard') : $controller->index();
     })->middleware('throttle:5,1')->name('login');
     Route::post('/auth-login', [LoginController::class, 'login'])->name('auth-login.login');
-
 });
 Route::middleware(['auth', 'role:Bos'])->group(function () {
     Route::post('/auth-register', [RegisterController::class, 'register'])->name('auth-register.register');
@@ -72,8 +71,7 @@ Route::middleware(['auth', 'role:Bos'])->group(function () {
     Route::match(['get', 'post'], '/DB', [DbController::class, 'index'])->name('DB.index');
     Route::get('/mstock/mstock', [DbController::class, 'getMstock'])->name('mstock.mstock');
     Route::post('/import-stock', [DbController::class, 'import'])->name('stock.import');
-    //   Route::get('/import-stock', [DbController::class, 'import'])->name('stock.import');
-
+    
     Route::get('/buttons', [ButtonsController::class, 'index'])->name('buttons.index');
     Route::get('/buttons/buttons', [ButtonsController::class, 'getButtons'])->name('buttons.buttons');
     Route::get('/buttons/edit/{id}', [ButtonsController::class, 'edit'])->name('buttons.edit');
@@ -108,8 +106,7 @@ Route::middleware(['auth', 'role:Admin'])->group(function () {
 
     Route::get('/dashboardadmin', [dashboardAdminController::class, 'index'])->name('dashboardadmin');
     Route::get('/posopnameadmin/posopnameadmin', [dashboardAdminController::class, 'getPosopnamesadmin'])->name('posopnameadmin.posopnameadmin');
-    // Route::get('/admin/show/{opname_id}', [dashboardAdminController::class, 'showadmin'])->name('pages.showdashboardadmin');
-
+    
     Route::get('/importsoadmin/use/{opname_id}', [dashboardAdminController::class, 'indexsoadmin'])->name('importsoadmin');
     Route::post('/importsoadmin/{opname_id}', [dashboardAdminController::class, 'importsoadmin'])->name('importsoadmin.use');
     Route::get('/importsoadmin/downloadsoadmin/{filename}', [dashboardAdminController::class, 'downloadsoadmin'])->name('importsoadmin.downloadsoadmin');
@@ -119,8 +116,6 @@ Route::middleware(['auth', 'role:Admin'])->group(function () {
         ->name('opname.showitemadmin');
     Route::get('/opname/getshowitemadmin', [dashboardAdminController::class, 'getshowitemadmin'])
         ->name('opname.getshowitemadmin');
-    // Route::get('/opname/printitemadmin/{form_number}', [dashboardAdminController::class, 'printitemadmin'])
-    //     ->name('opname.printitemadmin');
       Route::get('/opname/printitemadmin/{opname_sub_location_id}', [dashboardAdminController::class, 'printitemadmin'])
         ->name('opname.printitemadmin');
 });
@@ -156,15 +151,11 @@ Route::get('/redirect-by-role', function () {
     } elseif ($user->hasRole('Admin')) {
         return redirect('/dashboardadmin');
     } elseif ($user->hasRole('Penginput')) {
-        $opnameId = $user->location_id; // ambil dari kolom location_id user
-
+        $opnameId = $user->location_id;
         if (!$opnameId) {
-            // Jika tidak ada location_id, redirect ke halaman lain atau beri error
             return redirect('/')->withErrors(['error' => 'Location ID tidak ditemukan.']);
         }
-
         return redirect("/dashboardpenginput/{$opnameId}");
     }
-
-    return redirect('/dashboard'); // fallback
+    return redirect('/dashboard');
 })->middleware('auth');

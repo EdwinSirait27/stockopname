@@ -1,16 +1,15 @@
 <?php
-
 namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Spatie\Permission\Models\Permission;
 use Yajra\DataTables\DataTables;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 class PermissionController extends Controller
 {
       public function index()
     {
-
         return view('permissions.index');
     }
     public function getPermissions()
@@ -20,7 +19,6 @@ class PermissionController extends Controller
             ->get()
             ->map(function ($permission) {
                 $permission->id_hashed = substr(hash('sha256', $permission->id . env('APP_KEY')), 0, 8);
-
                 $permission->action = '
                 <a href="' . route('permissions.edit', $permission->id_hashed) . '" class="mx-3" data-bs-toggle="tooltip" data-bs-original-title="Edit permission" title="Edit Permission: ' . e($permission->name) . '">
                     <i class="fas fa-user-edit text-secondary"></i>
@@ -37,7 +35,6 @@ class PermissionController extends Controller
     {
         return view('permissions.create');
     }
-
     public function store(Request $request)
     {
         $validatedData = $request->validate([
@@ -68,7 +65,7 @@ class PermissionController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
-            \Log::error('Permission creation failed: ' . $e->getMessage());
+            Log::error('Permission creation failed: ' . $e->getMessage());
 
             return redirect()->back()
                 ->withInput()

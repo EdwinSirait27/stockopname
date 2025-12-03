@@ -145,7 +145,7 @@ class dasboardPenginputController extends Controller
     public function saveScannedItem(Request $request, $opname_sub_location_id)
     {
         // Log semua request yang masuk
-        \Log::info('Payload saveScannedItem:', $request->all());
+        Log::info('Payload saveScannedItem:', $request->all());
 
         $validated = $request->validate([
             'item_master_id' => 'required|integer',
@@ -169,7 +169,7 @@ class dasboardPenginputController extends Controller
             'date' => Carbon::now(),
         ]);
 
-        \Log::info('Item berhasil disimpan', [
+        Log::info('Item berhasil disimpan', [
             'opname_item_id' => $opnameItemId,
             'sub_location_id' => $subLocation->sub_location_id
         ]);
