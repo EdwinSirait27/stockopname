@@ -19,7 +19,7 @@ protected $keyType = 'string';
         'status',
         'location_id',
         'note',
-        'status',
+        'status',       
         'coutner',
         'number',
         'approval_1',
